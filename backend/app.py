@@ -1,8 +1,12 @@
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 
+app = Flask(__name__)
+CORS(app)
+
 import db
 import re
+import time
 
 def convert_forme(name):
     name = re.sub(r'([a-z])([A-Z])', r'\1-\2', name) # insert hyphen between lowercase and uppercase letters
@@ -38,48 +42,20 @@ def name_to_object(name):
     return {'name': split_name[-1], 'icon_url': icon_url}
 
 
-        
-    # split_name = name.split(' ')f
+# Cache for storing Pokemon and timestamp
+pokemon_cache = {'timestamp': time.time(), 'pokemon': db.get()}
 
-    # # Update regex to stop at the number before the "%" character
-    # icon_url = re.findall('[A-Z][^A-Z%]*', split_name[0])
-    # icon_url = [word.lower() for word in icon_url]
+CACHE_LIFETIME = 60 * 5  # 5 minutes
 
-    # if len(split_name) == 3:
-    #     icon_url.append(split_name[2].lower())
+def get_all_pokemon():
+    # If the cache is older than CACHE_LIFETIME, refresh it
+    if time.time() - pokemon_cache['timestamp'] > CACHE_LIFETIME:
+        pokemon_cache['pokemon'] = db.get()
+        pokemon_cache['timestamp'] = time.time()
 
-    # icon_url = '-'.join(icon_url)
+    return pokemon_cache['pokemon']
 
-    # Replace gender symbols with '-f' and '-m', respectively
-    # if '♀' in icon_url:
-    #     icon_url = icon_url.replace('♀', '-f')
-    # elif '♂' in icon_url:
-    #     icon_url = icon_url.replace('♂', '-m')
-
-    # # Replace apostrophe with nothing
-    # icon_url = icon_url.replace('\'', '')
-
-    return ans
-
-# test with some examples
-# print(name_to_object("PinsirMega Pinsir"))
-# print(name_to_object("Bulbasaur"))
-# print(name_to_object("Venusaur"))
-# print(name_to_object("VenusaurMega Venusaur"))
-# print(name_to_object("Charmeleon"))
-# print(name_to_object("CharizardMega Charizard X"))
-# print(name_to_object("Farfetch'd"))
-# print(name_to_object("BlazikenMega Blaziken"))
-# print(name_to_object("PinsirMega Pinsir"))  # {'name': 'Pinsir', 'icon_url': 'pinsir-mega'}
-# print(name_to_object("Bulbasaur"))  # {'name': 'Bulbasaur', 'icon_url': 'bulbasaur'}
-# print(name_to_object("Mr. Mime"))  # {'name': 'Mime', 'icon_url': 'mr-mime'}
-# print(name_to_object("Zygarde50% Forme")) 
-
-    
-app = Flask(__name__)
-CORS(app)
-
-allPokemon = db.get()
+allPokemon = get_all_pokemon()
 
 #set of all types
 all_types = set()
@@ -135,7 +111,26 @@ def get_pokemon_page():
     pageSize = int(request.args.get('pageSize', 20))
     filter_type = request.args.get('typeFilter', '')
     asc = request.args.get('asc', 'true') == 'true'
-    return get_page(pageNum, pageSize, asc, filter_type)
+
+    # Step 1: Get all Pokemon
+    allPokemon = db.get()
+
+    # Step 2: Filter by type, if specified
+    if filter_type:
+        allPokemon = [p for p in allPokemon if p['type_one'] == filter_type]
+
+    # Step 3: Sort and paginate
+    allPokemon = allPokemon if asc else allPokemon[::-1]
+
+    # update each pokemon's name and icon_url
+    for pokemon in allPokemon:
+        name_info = name_to_object(pokemon['name'])
+        pokemon['name'] = name_info['name']
+        pokemon['full_name'] = name_info['icon_url']
+    
+    page = allPokemon[(pageNum-1)*pageSize:pageNum*pageSize]
+
+    return jsonify(page)
 
 @app.route('/pokemon/types', methods=['GET'])
 def get_types():

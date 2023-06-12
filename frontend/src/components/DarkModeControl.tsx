@@ -1,33 +1,32 @@
-import { useEffect, useState } from "react";
+import React, { useEffect, useState } from 'react';
 
-const DarkModeControl = () => {
-    const [darkMode, setDarkMode] = useState(false);
+const getStoredDarkModePreference = (): boolean | null => {
+    const storedPreference = localStorage.getItem('darkMode');
+    return storedPreference === null ? null : storedPreference === 'true';
+}
+
+const getSystemDarkModePreference = (): boolean => {
+    return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+}
+
+const DarkModeControl: React.FC = () => {
+    const [isDarkMode, setIsDarkMode] = useState<boolean>(getStoredDarkModePreference() ?? getSystemDarkModePreference());
 
     useEffect(() => {
-        const darkModeMediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
-        setDarkMode(darkModeMediaQuery.matches);
-        darkModeMediaQuery.addEventListener('change', (event) => {
-            setDarkMode(event.matches);
-        });
-    }, []);
-
-    const toggleDarkMode = () => {
-        if (darkMode) {
+        if (isDarkMode) {
+            document.documentElement.classList.add('dark');
+        } else {
             document.documentElement.classList.remove('dark');
         }
-        else {
-            document.documentElement.classList.add('dark');
-        }
-        setDarkMode(!darkMode);
-    };
+
+        localStorage.setItem('darkMode', String(isDarkMode));
+    }, [isDarkMode]);
 
     return (
-        <div>
-            <button onClick={toggleDarkMode} className="p-2 m-2 border rounded">
-                Toggle Dark Mode
-            </button>
-        </div>
+        <button onClick={() => setIsDarkMode(!isDarkMode)}>
+            Toggle Dark Mode
+        </button>
     );
-}
+};
 
 export default DarkModeControl;

@@ -1,18 +1,19 @@
 import React, { useEffect, useState } from 'react';
-import { useQuery, useInfiniteQuery } from 'react-query';
-
+import { useQuery } from 'react-query';
 import FiltersControl from './FiltersControl';
 import PageSizeSelector from './PageSizeSelector';
 import PageSelector from './PageSelector';
 import PokemonPage from './PokemonPage';
 import { fetchPokemonCount, fetchPokemonData } from '../api';
 import DarkModeControl from './DarkModeControl';
+import { PokemonData } from '../types';
 
 interface PokedexState {
     sortOrder: boolean;
     typeFilter: string;
     pageSize: number;
     currentPage: number;
+    fetchedData: PokemonData[];
 }
 
 const Pokedex: React.FC = () => {
@@ -21,6 +22,7 @@ const Pokedex: React.FC = () => {
         typeFilter: '',
         pageSize: 10,
         currentPage: 1,
+        fetchedData: [],
     };
 
     const sessionState = sessionStorage.getItem('pokedexState');
@@ -34,26 +36,21 @@ const Pokedex: React.FC = () => {
 
     const { sortOrder, typeFilter, pageSize, currentPage } = state;
 
-    const {
-        data,
-        fetchNextPage,
-        hasNextPage,
-    } = useInfiniteQuery(
-        ['pokemonData', sortOrder, typeFilter],
-        ({ pageParam = 1 }) => fetchPokemonData(pageParam, 50, sortOrder, typeFilter),
+    const apiPageSize = 100; // The page size the API uses.
+    const apiPageNumber = Math.ceil((currentPage * pageSize) / apiPageSize);
+
+    const { refetch, isFetching, status } = useQuery(
+        ['pokemonData', sortOrder, typeFilter, apiPageNumber],
+        () => fetchPokemonData(apiPageNumber, apiPageSize, sortOrder, typeFilter),
         {
-            getNextPageParam: (lastPage, allPages) => {
-                // Check if your API has returned a signal that there are no more pages to fetch
-                if (lastPage === null) {
-                    return false;  // No more pages to fetch
-                }
-
-
-                return allPages.length + 1;  // Fetch the next page
-            }
+            onSuccess: (data) => {
+                setState((prevState: PokedexState) => ({
+                    ...prevState,
+                    fetchedData: prevState.fetchedData.concat(data),
+                }));
+            },
         }
     );
-
 
     const {
         data: pokemonCount,
@@ -61,14 +58,16 @@ const Pokedex: React.FC = () => {
 
     const totalPages = Math.ceil((pokemonCount || 0) / pageSize);
 
-    const pokemonData = data?.pages.flat();
+    const startIndex = (currentPage - 1) * pageSize;
+    const endIndex = startIndex + pageSize;
 
-    // later in your code, when you want to manually fetch the next page (e.g. on button click or scroll event)
-    if (pokemonData && pokemonData.length < (pageSize * currentPage) && hasNextPage) {
-        console.log('fetching next page');
-        fetchNextPage();
-    }
+    const pageData = state.fetchedData.slice(startIndex, endIndex);
 
+    useEffect(() => {
+        if (currentPage * pageSize > state.fetchedData.length && !isFetching && status === 'success') {
+            refetch();
+        }
+    }, [currentPage]);
     return (
         <div className='dark:bg-gray-800 dark:text-white dark:border-gray-700 dark:divide-gray-700'>
             <nav className=" border-gray-200 dark:bg-gray-800 dark:border-gray-700 dark:divide-gray-700">
@@ -76,9 +75,9 @@ const Pokedex: React.FC = () => {
                     <DarkModeControl />
                     <FiltersControl
                         sortOrder={sortOrder}
-                        setSortOrder={(value) => setState((prev: PokedexState) => ({ ...prev, sortOrder: value }))}
+                        setSortOrder={(value) => setState((prev: PokedexState) => ({ ...prev, sortOrder: value, currentPage: 1, fetchedData: [] }))}
                         typeFilter={typeFilter}
-                        setTypeFilter={(value) => setState((prev: any) => ({ ...prev, typeFilter: value, currentPage: 1 }))}
+                        setTypeFilter={(value) => setState((prev: any) => ({ ...prev, typeFilter: value, currentPage: 1, fetchedData: [] }))}
                     />
 
                     <PageSizeSelector
@@ -94,7 +93,7 @@ const Pokedex: React.FC = () => {
                 </div>
             </nav>
 
-            {pokemonData ? <PokemonPage data={pokemonData.slice((currentPage - 1) * pageSize, currentPage * pageSize)} />
+            {pageData.length > 0 ? <PokemonPage data={pageData} />
                 :
                 <div role="status">
                     <svg aria-hidden="true" className="inline w-10 h-10 mr-2 text-gray-200 animate-spin dark:text-gray-600 fill-blue-600"
